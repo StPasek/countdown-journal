@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Countdown Journal</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .timer {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .running {
+            background-color: #e6ffe6;
+        }
+
+        .finished {
+            background-color: #ffe6e6;
+        }
+
+        button {
+            margin-right: 5px;
+        }
+
+        input {
+            margin-right: 5px;
+        }
+
+        .add-timer-btn,
+        .reset-all-btn,
+        .export-log-btn {
+            display: inline-block;
+            margin: 20px 10px 20px 0;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        .countdown-display {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 10px 0;
+            text-align: left;
+        }
+
+
+        .name-input {
+            width: 200px;
+            text-align: left;
+        }
+
+        .time-input {
+            width: 60px;
+            text-align: left;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <h1>Countdown Journal</h1>
+        <div>
+            <button @click="addNewTimer" class="add-timer-btn">Add New Timer</button>
+            <button @click="confirmResetAllTimers" class="reset-all-btn">Reset All</button>
+            <button @click="exportLogJournal" class="export-log-btn">Export as JSON</button>
+        </div>
+        <div v-for="(timer, index) in timers" :key="index" class="timer"
+            :class="{ running: timer.running, finished: timer.finished }">
+            <input v-model="timer.name" type="text" :placeholder="'Timer ' + (index + 1)" @input="saveState"
+                class="name-input">
+            <input v-model.number="timer.hours" type="number" min="0" placeholder="Hours" @input="updateTimer(index)"
+                class="time-input">
+            <input v-model.number="timer.minutes" type="number" min="0" max="59" placeholder="Minutes"
+                @input="updateTimer(index)" class="time-input">
+            <input v-model.number="timer.seconds" type="number" min="0" max="59" placeholder="Seconds"
+                @input="updateTimer(index)" class="time-input">
+            <p class="countdown-display">{{ formatTime(timer.remainingTime) }}</p>
+            <button @click="startTimer(index)" :disabled="timer.running || timer.finished">{{ timer.paused ? 'Resume' :
+                'Start' }}</button>
+            <button @click="pauseTimer(index)" :disabled="!timer.running">Pause</button>
+            <button @click="confirmResetTimer(index)">Reset</button>
+            <button @click="confirmRemoveTimer(index)">Remove</button>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                timers: [],
+                audioContext: null
+            },
+            created() {
+                this.loadState();
+                window.addEventListener('beforeunload', this.saveState);
+            },
+            methods: {
+                addNewTimer() {
+                    this.timers.push({
+                        name: 'Timer ' + (this.timers.length + 1),
+                        hours: 0,
+                        minutes: 0,
+                        seconds: 0,
+                        initialTime: 0,
+                        remainingTime: 0,
+                        running: false,
+                        paused: false,
+                        finished: false,
+                        interval: null
+                    });
+                    this.saveState();
+                },
+                updateTimer(index) {
+                    const timer = this.timers[index];
+                    const totalSeconds = timer.hours * 3600 + timer.minutes * 60 + timer.seconds;
+                    timer.initialTime = totalSeconds;
+                    if (!timer.running && !timer.paused) {
+                        timer.remainingTime = totalSeconds;
+                    }
+                    this.saveState();
+                },
+                startTimer(index) {
+                    const timer = this.timers[index];
+                    if (!timer.running && !timer.finished) {
+                        if (timer.remainingTime === 0 || !timer.paused) {
+                            timer.remainingTime = timer.initialTime;
+                        }
+                        if (timer.remainingTime > 0) {
+                            timer.running = true;
+                            timer.paused = false;
+                            timer.interval = setInterval(() => {
+                                timer.remainingTime--;
+                                this.saveState();
+                                if (timer.remainingTime <= 0) {
+                                    this.finishTimer(index);
+                                }
+                            }, 1000);
+                        }
+                    }
+                    this.saveState();
+                },
+                pauseTimer(index) {
+                    const timer = this.timers[index];
+                    clearInterval(timer.interval);
+                    timer.running = false;
+                    timer.paused = true;
+                    this.saveState();
+                },
+                resetTimer(index) {
+                    const timer = this.timers[index];
+                    clearInterval(timer.interval);
+                    timer.initialTime = timer.hours * 3600 + timer.minutes * 60 + timer.seconds;
+                    timer.remainingTime = timer.initialTime;
+                    timer.running = false;
+                    timer.paused = false;
+                    timer.finished = false;
+                    this.saveState();
+                },
+                removeTimer(index) {
+                    clearInterval(this.timers[index].interval);
+                    this.timers.splice(index, 1);
+                    this.saveState();
+                },
+                finishTimer(index) {
+                    const timer = this.timers[index];
+                    clearInterval(timer.interval);
+                    timer.running = false;
+                    timer.paused = false;
+                    timer.finished = true;
+                    this.playAlarm();
+                    this.saveState();
+                },
+                formatTime(totalSeconds) {
+                    const hours = Math.floor(totalSeconds / 3600);
+                    const minutes = Math.floor((totalSeconds % 3600) / 60);
+                    const seconds = totalSeconds % 60;
+                    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                },
+                playAlarm() {
+                    if (!this.audioContext) {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    const beepDuration = 0.3;
+                    const pauseDuration = 0.2;
+                    const beepCount = 3;
+
+                    for (let i = 0; i < beepCount; i++) {
+                        const oscillator = this.audioContext.createOscillator();
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(440, this.audioContext.currentTime + (beepDuration + pauseDuration) * i);
+                        oscillator.connect(this.audioContext.destination);
+                        oscillator.start(this.audioContext.currentTime + (beepDuration + pauseDuration) * i);
+                        oscillator.stop(this.audioContext.currentTime + (beepDuration + pauseDuration) * i + beepDuration);
+                    }
+                },
+                resetAllTimers() {
+                    this.timers.forEach(timer => {
+                        clearInterval(timer.interval);
+                        timer.initialTime = timer.hours * 3600 + timer.minutes * 60 + timer.seconds;
+                        timer.remainingTime = timer.initialTime;
+                        timer.running = false;
+                        timer.paused = false;
+                        timer.finished = false;
+                    });
+                    this.saveState();
+                },
+                confirmResetAllTimers() {
+                    if (confirm('Are you sure you want to reset all timers?')) {
+                        this.resetAllTimers();
+                    }
+                },
+                confirmResetTimer(index) {
+                    if (confirm('Are you sure you want to reset this timer?')) {
+                        this.resetTimer(index);
+                    }
+                },
+                confirmRemoveTimer(index) {
+                    if (confirm('Are you sure you want to remove this timer?')) {
+                        this.removeTimer(index);
+                    }
+                },
+                saveState() {
+                    const state = this.timers.map(timer => ({
+                        ...timer,
+                        interval: null // Don't save the interval ID
+                    }));
+                    localStorage.setItem('timerState', JSON.stringify(state));
+                },
+                loadState() {
+                    const savedState = localStorage.getItem('timerState');
+                    if (savedState) {
+                        this.timers = JSON.parse(savedState);
+                        this.timers.forEach((timer, index) => {
+                            if (timer.running) {
+                                this.startTimer(index);
+                            }
+                        });
+                    }
+                },
+                exportLogJournal() {
+                    const logData = this.timers.map(timer => ({
+                        name: timer.name,
+                        initialTime: timer.initialTime,
+                        remainingTime: timer.remainingTime,
+                        finished: timer.finished
+                    }));
+
+                    const jsonString = JSON.stringify(logData, null, 2);
+                    const blob = new Blob([jsonString], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+
+                    const currentDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+                    const fileName = `${currentDate}.json`;
+
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>
