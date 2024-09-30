@@ -52,7 +52,6 @@
             text-align: left;
         }
 
-
         .name-input {
             width: 200px;
             text-align: left;
@@ -115,7 +114,8 @@
                         running: false,
                         paused: false,
                         finished: false,
-                        interval: null
+                        startTime: null,
+                        pausedAt: null
                     });
                     this.saveState();
                 },
@@ -137,47 +137,56 @@
                         if (timer.remainingTime > 0) {
                             timer.running = true;
                             timer.paused = false;
-                            timer.interval = setInterval(() => {
-                                timer.remainingTime--;
-                                this.saveState();
-                                if (timer.remainingTime <= 0) {
-                                    this.finishTimer(index);
-                                }
-                            }, 1000);
+                            timer.startTime = Date.now() - (timer.initialTime - timer.remainingTime) * 1000;
+                            this.updateTimerDisplay(index);
                         }
                     }
                     this.saveState();
                 },
                 pauseTimer(index) {
                     const timer = this.timers[index];
-                    clearInterval(timer.interval);
                     timer.running = false;
                     timer.paused = true;
+                    timer.pausedAt = Date.now();
                     this.saveState();
                 },
                 resetTimer(index) {
                     const timer = this.timers[index];
-                    clearInterval(timer.interval);
                     timer.initialTime = timer.hours * 3600 + timer.minutes * 60 + timer.seconds;
                     timer.remainingTime = timer.initialTime;
                     timer.running = false;
                     timer.paused = false;
                     timer.finished = false;
+                    timer.startTime = null;
+                    timer.pausedAt = null;
                     this.saveState();
                 },
                 removeTimer(index) {
-                    clearInterval(this.timers[index].interval);
                     this.timers.splice(index, 1);
                     this.saveState();
                 },
                 finishTimer(index) {
                     const timer = this.timers[index];
-                    clearInterval(timer.interval);
                     timer.running = false;
                     timer.paused = false;
                     timer.finished = true;
+                    timer.remainingTime = 0;
                     this.playAlarm();
                     this.saveState();
+                },
+                updateTimerDisplay(index) {
+                    const timer = this.timers[index];
+                    if (timer.running) {
+                        const now = Date.now();
+                        const elapsed = Math.floor((now - timer.startTime) / 1000);
+                        timer.remainingTime = Math.max(0, timer.initialTime - elapsed);
+
+                        if (timer.remainingTime <= 0) {
+                            this.finishTimer(index);
+                        } else {
+                            requestAnimationFrame(() => this.updateTimerDisplay(index));
+                        }
+                    }
                 },
                 formatTime(totalSeconds) {
                     const hours = Math.floor(totalSeconds / 3600);
@@ -205,12 +214,13 @@
                 },
                 resetAllTimers() {
                     this.timers.forEach(timer => {
-                        clearInterval(timer.interval);
                         timer.initialTime = timer.hours * 3600 + timer.minutes * 60 + timer.seconds;
                         timer.remainingTime = timer.initialTime;
                         timer.running = false;
                         timer.paused = false;
                         timer.finished = false;
+                        timer.startTime = null;
+                        timer.pausedAt = null;
                     });
                     this.saveState();
                 },
@@ -232,7 +242,7 @@
                 saveState() {
                     const state = this.timers.map(timer => ({
                         ...timer,
-                        interval: null // Don't save the interval ID
+                        startTime: timer.running ? Date.now() - (timer.initialTime - timer.remainingTime) * 1000 : null
                     }));
                     localStorage.setItem('timerState', JSON.stringify(state));
                 },
